@@ -9,11 +9,17 @@ description = "A small, fast known-background matting model for print-on-demand 
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
+# The post-ops (refine, cleanup, gate, router, metrics) are numpy/scipy/PIL only, so a
+# service that runs the exported ONNX graph can depend on this package without torch.
 dependencies = [
-  "torch>=2.4",
   "pillow>=10.0",
   "numpy>=1.26",
   "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+train = [
+  "torch>=2.4",
   "tqdm>=4.66",
   "safetensors>=0.4",
   "huggingface_hub>=0.23",

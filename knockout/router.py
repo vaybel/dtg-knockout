@@ -54,6 +54,8 @@ CHROMA_TOL = 0.22
 
 @dataclass
 class RouteDecision:
+    """One routing decision: verdict, confidence, reason, and the measured signals."""
+
     verdict: str          # "knockout" | "full_bleed" | "reject"
     confidence: float     # 0..1
     reason: str

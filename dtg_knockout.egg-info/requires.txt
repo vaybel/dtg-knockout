@@ -1,0 +1,7 @@
+torch>=2.4
+pillow>=10.0
+numpy>=1.26
+scipy>=1.11
+tqdm>=4.66
+safetensors>=0.4
+huggingface_hub>=0.23
