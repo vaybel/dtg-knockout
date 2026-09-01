@@ -5,3 +5,6 @@ data/
 checkpoints*/
 *.onnx
 *.pt
+*.egg-info/
+build/
+dist/
