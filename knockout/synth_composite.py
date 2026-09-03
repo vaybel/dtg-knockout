@@ -241,8 +241,12 @@ def make_inline_lettering(rng: random.Random, bg01: np.ndarray) -> Image.Image:
     a0, a1, a2 = (np.asarray(m, np.float32) / 255.0 > 0.5 for m in (m0, m1, m2))
 
     def _contrast(cands: list[tuple[int, int, int]]) -> tuple[int, int, int]:
-        return next(c for c in cands
-                    if np.linalg.norm(np.array(c, np.float32) / 255.0 - bg01) / np.sqrt(3.0) >= 0.22)
+        # every candidate can sit within tolerance of a dark or mid ground: fall back to the
+        # ground's complement rather than raising out of the pool build
+        fallback = tuple(int(round((1.0 - v) * 255)) for v in bg01)
+        return next((c for c in cands
+                     if np.linalg.norm(np.array(c, np.float32) / 255.0 - bg01) / np.sqrt(3.0) >= 0.22),
+                    fallback)
 
     fill = _contrast([tuple(rng.randint(0, 255) for _ in range(3)), (20, 60, 90), (0, 0, 0)])
     keyline = _contrast([tuple(rng.randint(0, 255) for _ in range(3)), (200, 160, 40), (0, 0, 0)])
