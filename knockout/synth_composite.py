@@ -44,6 +44,7 @@ class DriftConfig:
     dense_max: int = 6
     inline_prob: float = 0.10      # collegiate lettering: ground-colored inline between fill and keyline
     pocket_prob: float = 0.10      # ground-colored pocket enclosed deep inside the art; GT keeps it
+    scene_prob: float = 0.06       # art on a rectangular scene block whose interior runs near the ground; GT keeps the block
 
 
 def _low_freq_shading(h: int, w: int, amp: float, rng: random.Random) -> np.ndarray:
@@ -133,6 +134,59 @@ def wrap_in_badge(fg: Image.Image, rng: random.Random, bg01: np.ndarray) -> Imag
         d.ellipse([0, 0, W - 1, H - 1], fill=color + (255,))
     plate.alpha_composite(fg, (pad, pad))
     return plate
+
+
+def wrap_in_scene_block(fg: Image.Image, rng: random.Random, bg01: np.ndarray) -> Image.Image:
+    """Set the art on a hard-edged rectangular scene (a photo/poster block); GT keeps the block.
+
+    The block is a low-frequency cloud field in two or three colours with patches that run
+    within the keyer's tolerance of the ground — deliberately at the block's edge too — and a
+    sprinkle of bright speckles. A bordered scene whose interior touches the ground colour is
+    the class where keying the outer ground bites into the block; the rule is the same as for
+    badges and pockets: everything bounded by ink is kept, so the alpha is the whole rectangle.
+    """
+    pad = round(max(fg.size) * rng.uniform(0.15, 0.35))
+    W, H = fg.width + 2 * pad, fg.height + 2 * pad
+    ground = np.asarray(bg01, np.float32)
+    # two or three cloud colours; one of them is a near-ground tone so the interior meets the
+    # ground somewhere, the others must contrast with it
+    def far_color() -> np.ndarray:
+        for _ in range(20):
+            c = np.array([rng.random() for _ in range(3)], np.float32)
+            if np.linalg.norm(c - ground) / np.sqrt(3.0) >= 0.25:
+                return c
+        return 1.0 - ground
+    near = np.clip(ground + np.array([rng.uniform(-0.04, 0.04) for _ in range(3)], np.float32), 0, 1)
+    colors = [far_color(), far_color() if rng.random() < 0.6 else near, near]
+    rng.shuffle(colors)
+    fields = [_low_freq_shading(H, W, 1.0, rng)[..., 0] for _ in colors]
+    stack = np.stack(fields, 0)
+    stack = stack - stack.min(axis=0, keepdims=True)
+    weights = stack / (stack.sum(axis=0, keepdims=True) + 1e-6)
+    scene = sum(weights[i][..., None] * colors[i][None, None, :] for i in range(len(colors)))
+    # a band along one or two edges pulled toward the ground: the bite class
+    band = np.zeros((H, W), np.float32)
+    bw = max(2, round(min(W, H) * rng.uniform(0.04, 0.12)))
+    for side in rng.sample(("top", "bottom", "left", "right"), rng.randint(1, 2)):
+        if side == "top":
+            band[:bw, :] = 1.0
+        elif side == "bottom":
+            band[-bw:, :] = 1.0
+        elif side == "left":
+            band[:, :bw] = 1.0
+        else:
+            band[:, -bw:] = 1.0
+    band = band * _low_freq_shading(H, W, 1.0, rng)[..., 0].clip(0, 1)
+    scene = scene * (1 - band[..., None]) + near[None, None, :] * band[..., None]
+    rgb = (np.clip(scene, 0, 1) * 255).round().astype(np.uint8)
+    # bright speckles (stars / grain) so the block reads as a photo, not a flat plate
+    n_spk = rng.randint(0, max(1, W * H // 4000))
+    ys = np.random.randint(0, H, n_spk)
+    xs = np.random.randint(0, W, n_spk)
+    rgb[ys, xs] = 255 if rng.random() < 0.7 else rng.randint(160, 255)
+    block = Image.fromarray(np.dstack([rgb, np.full((H, W), 255, np.uint8)]), "RGBA")
+    block.alpha_composite(fg, (pad, pad))
+    return block
 
 
 def _block_glyph(rng: random.Random, h: int) -> Image.Image:
@@ -355,16 +409,30 @@ def build(fg_dir: Path, out_dir: Path, n_samples: int, seed: int, max_side: int 
                  for p in picks]
         if rng.random() < cfg.inline_prob:
             picks.append(make_inline_lettering(rng, bg01))
-        picks = [wrap_in_badge(p, rng, bg01) if rng.random() < cfg.badge_prob
-                 else add_outline(p, rng, bg01) if rng.random() < cfg.outline_prob else p
-                 for p in picks]
+        ops: list[str] = []
+        wrapped = []
+        for p in picks:
+            roll = rng.random()
+            if roll < cfg.scene_prob:
+                wrapped.append(wrap_in_scene_block(p, rng, bg01))
+                ops.append("scene")
+            elif roll < cfg.scene_prob + cfg.badge_prob:
+                wrapped.append(wrap_in_badge(p, rng, bg01))
+                ops.append("badge")
+            elif rng.random() < cfg.outline_prob:
+                wrapped.append(add_outline(p, rng, bg01))
+                ops.append("outline")
+            else:
+                wrapped.append(p)
+        picks = wrapped
         inp, alpha, n = compose_sample(picks, bg_hex, sample_cfg, rng)
         sid = f"{written:07d}"
         inp.save(out_dir / "input" / f"{sid}.png")
         alpha.save(out_dir / "alpha" / f"{sid}.png")
         manifest.write(json.dumps({"id": sid, "input": f"input/{sid}.png",
                                    "alpha": f"alpha/{sid}.png", "bg_hex": bg_hex,
-                                   "n_elements": n, "collision": collision}) + "\n")
+                                   "n_elements": n, "collision": collision,
+                                   "ops": ops}) + "\n")
         written += 1
     manifest.close()
     return written

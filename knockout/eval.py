@@ -43,7 +43,7 @@ def main() -> None:
     agg = {"iou": 0.0, "over_crop": 0.0, "under_crop": 0.0, "sad": 0.0}
     agg_ref = dict.fromkeys(agg, 0.0)
     res_raw, res_ref, acc_raw, acc_ref, n = [], [], 0, 0, 0
-    for bi, (x, y) in enumerate(loader):
+    for bi, (x, y, _bg) in enumerate(loader):
         pred = torch.sigmoid(model(x.to(device))).cpu().numpy()
         for b in range(pred.shape[0]):
             a = (pred[b, 0] >= args.threshold).astype(np.float32)
