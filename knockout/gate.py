@@ -57,6 +57,22 @@ def _channel_grad(rgb01: np.ndarray, tol_px: int = 7) -> np.ndarray:
     return ndimage.maximum_filter(np.max(grads, axis=0), size=tol_px)
 
 
+def _enclosed_pocket(comp: np.ndarray, a: np.ndarray, vis: np.ndarray) -> bool:
+    """A garment-toned kept region that the rest of the art encloses.
+
+    Such a pocket is authored ink by doctrine and shows no difference on the garment it was
+    drawn for; only an island out in open ground is a remnant. A pocket that would be visible
+    on the requested garment is a plate and stays benched.
+    """
+    if float(vis[comp].mean()) >= VIS_TOL:
+        return False
+    rest = a & ~comp
+    if not rest.any():
+        return False
+    silhouette = ndimage.binary_fill_holes(ndimage.binary_closing(rest, iterations=3))
+    return float(silhouette[comp].mean()) >= 0.9
+
+
 def gate(
     alpha01: np.ndarray, rgb01: np.ndarray, bg01: np.ndarray,
     garment01: np.ndarray | None = None,
@@ -139,7 +155,7 @@ def gate(
             cc = comp & ~ndimage.binary_erosion(comp, border_value=0)
             sup = float((grad[cc] >= EDGE_TAU).mean()) if cc.any() else 0.0
             worst_comp = min(worst_comp, sup)
-            if sup < COMP_EDGE_MIN:
+            if sup < COMP_EDGE_MIN and not _enclosed_pocket(comp, a, vis):
                 bad_comp_frac += area / a.size
 
     signals = {"halo": round(halo, 4), "halo_visible": round(halo_visible, 4),

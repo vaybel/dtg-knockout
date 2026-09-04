@@ -43,6 +43,7 @@ class DriftConfig:
     dense_prob: float = 0.08       # 3-6 elements as one sheet (lockups, stacks)
     dense_max: int = 6
     inline_prob: float = 0.10      # collegiate lettering: ground-colored inline between fill and keyline
+    inline_near_fill_prob: float = 0.5  # the fill sits just off the ground (cream on white): the paid-order palette
     pocket_prob: float = 0.10      # ground-colored pocket enclosed deep inside the art; GT keeps it
     scene_prob: float = 0.06       # art on a rectangular scene block whose interior runs near the ground; GT keeps the block
 
@@ -211,7 +212,7 @@ def _block_glyph(rng: random.Random, h: int) -> Image.Image:
     return m
 
 
-def make_inline_lettering(rng: random.Random, bg01: np.ndarray) -> Image.Image:
+def make_inline_lettering(rng: random.Random, bg01: np.ndarray, near_fill_prob: float = 0.5) -> Image.Image:
     """Collegiate lettering whose inline stroke is EXACTLY the ground color.
 
     Structure per word: colored glyph fill -> ground-colored inline band -> colored keyline.
@@ -248,7 +249,14 @@ def make_inline_lettering(rng: random.Random, bg01: np.ndarray) -> Image.Image:
                      if np.linalg.norm(np.array(c, np.float32) / 255.0 - bg01) / np.sqrt(3.0) >= 0.22),
                     fallback)
 
-    fill = _contrast([tuple(rng.randint(0, 255) for _ in range(3)), (20, 60, 90), (0, 0, 0)])
+    if rng.random() < near_fill_prob:
+        # a fill within a hair of the ground: the inline is then bounded by low contrast on one
+        # side and the keyline on the other — the case the far-fill version never produces
+        off = np.array([rng.uniform(-1, 1) for _ in range(3)], np.float32)
+        off = off / (np.linalg.norm(off) + 1e-6) * rng.uniform(0.07, 0.20) * np.sqrt(3.0)
+        fill = tuple(int(round(v * 255)) for v in np.clip(bg01 + off, 0, 1))
+    else:
+        fill = _contrast([tuple(rng.randint(0, 255) for _ in range(3)), (20, 60, 90), (0, 0, 0)])
     keyline = _contrast([tuple(rng.randint(0, 255) for _ in range(3)), (200, 160, 40), (0, 0, 0)])
     ground = tuple(int(round(v * 255)) for v in bg01)
     rgb = np.zeros((*a0.shape, 3), np.uint8)
@@ -412,7 +420,7 @@ def build(fg_dir: Path, out_dir: Path, n_samples: int, seed: int, max_side: int 
         picks = [add_interior_pocket(p, rng, bg01) if rng.random() < cfg.pocket_prob else p
                  for p in picks]
         if rng.random() < cfg.inline_prob:
-            picks.append(make_inline_lettering(rng, bg01))
+            picks.append(make_inline_lettering(rng, bg01, cfg.inline_near_fill_prob))
         ops: list[str] = []
         wrapped = []
         for p in picks:
