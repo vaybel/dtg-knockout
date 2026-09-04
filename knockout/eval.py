@@ -1,8 +1,9 @@
 """Evaluate a checkpoint: GT scores + the prod no-GT gate over a threshold sweep.
 
 The gate (boundary_ground_residue) is what will police the model in production, so we
-report the accept-rate under it, not just IoU. Prod runs refine *then* the gate, so both
-sides are reported: raw model output and the refined (prod-path) output.
+report the accept-rate under it, not just IoU. Three sides are reported: the raw model
+output, the refined output, and the full production chain — refine, then the
+confidence-guarded cleanup, then the gate — which is the alpha a customer actually gets.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from torch.utils.data import DataLoader
 from .dataset import MatteDataset
 from .metrics import boundary_ground_residue, gt_scores, hex_to_rgb01
 from .model import KnockoutMatte
+from .cleanup import cleanup_alpha
 from .refine import refine_alpha
 from .train import pick_device
 
@@ -42,7 +44,8 @@ def main() -> None:
     loader = DataLoader(ds, batch_size=8)  # unshuffled: the manifest index below relies on order
     agg = {"iou": 0.0, "over_crop": 0.0, "under_crop": 0.0, "sad": 0.0}
     agg_ref = dict.fromkeys(agg, 0.0)
-    res_raw, res_ref, acc_raw, acc_ref, n = [], [], 0, 0, 0
+    agg_prod = dict.fromkeys(agg, 0.0)
+    res_raw, res_ref, res_prod, acc_raw, acc_ref, acc_prod, n = [], [], [], 0, 0, 0, 0
     for bi, (x, y, _bg) in enumerate(loader):
         pred = torch.sigmoid(model(x.to(device))).cpu().numpy()
         for b in range(pred.shape[0]):
@@ -55,12 +58,19 @@ def main() -> None:
             ar = refine_alpha(a, rgb01, bg01)
             for k, v in gt_scores(ar, y[b, 0].numpy()).items():
                 agg_ref[k] += v
+            # the shipped alpha: cleanup sees the soft prediction, and the garment is the ground
+            ap = cleanup_alpha(ar, rgb01, bg01, conf01=pred[b, 0], garment01=bg01)
+            for k, v in gt_scores(ap, y[b, 0].numpy()).items():
+                agg_prod[k] += v
             r = boundary_ground_residue(a, rgb01, bg01)
             rr = boundary_ground_residue(ar, rgb01, bg01)
+            rp = boundary_ground_residue(ap, rgb01, bg01)
             res_raw.append(r)
             res_ref.append(rr)
+            res_prod.append(rp)
             acc_raw += int(r <= RESIDUE_ACCEPT)
             acc_ref += int(rr <= RESIDUE_ACCEPT)
+            acc_prod += int(rp <= RESIDUE_ACCEPT)
             n += 1
 
     def report(tag: str, scores: dict[str, float], residues: list[float], accepted: int) -> None:
@@ -72,7 +82,8 @@ def main() -> None:
 
     print(f"N={n}")
     report("raw model output:", agg, res_raw, acc_raw)
-    report("refined (prod path: refine -> gate):", agg_ref, res_ref, acc_ref)
+    report("refined (refine -> gate):", agg_ref, res_ref, acc_ref)
+    report("prod chain (refine -> cleanup -> gate):", agg_prod, res_prod, acc_prod)
 
 
 if __name__ == "__main__":

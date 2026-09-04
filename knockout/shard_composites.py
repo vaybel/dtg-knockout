@@ -1,4 +1,4 @@
-"""Split v12_composites into N symlinked shard pools so a flaky-network upload survives drops.
+"""Split a composite pool into N symlinked shard pools so a flaky-network upload survives drops.
 
 Each shard is a real MatteDataset dir (input/ + alpha/ symlinks + its own manifest.jsonl)
 pointing back at the parent files — near-zero disk. Upload each shard independently; a drop
@@ -6,6 +6,7 @@ costs one ~900MB shard, not the whole 7G. The harness reads them all via --pools
 
 Run:
     python -m knockout.shard_composites --shards 8
+    python -m knockout.shard_composites --src <lab>/data/v13_composites --data-dir <lab>/data --out-prefix v13_comp
 """
 
 from __future__ import annotations
@@ -22,6 +23,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--shards", type=int, default=8)
     ap.add_argument("--src", type=Path, default=SRC, help="composite pool to shard")
+    ap.add_argument("--data-dir", type=Path, default=DATA, help="where the shard dirs are written")
+    ap.add_argument("--out-prefix", default="v12_comp",
+                    help="shard dir name prefix; must not collide with pools already on the volume")
     args = ap.parse_args()
 
     rows = [json.loads(l) for l in (args.src / "manifest.jsonl").open()]
@@ -31,7 +35,7 @@ def main() -> None:
         chunk = rows[s * per:(s + 1) * per]
         if not chunk:
             break
-        d = DATA / f"v12_comp_{s:02d}"
+        d = args.data_dir / f"{args.out_prefix}_{s:02d}"
         (d / "input").mkdir(parents=True, exist_ok=True)
         (d / "alpha").mkdir(parents=True, exist_ok=True)
         mf = (d / "manifest.jsonl").open("w")
@@ -39,7 +43,7 @@ def main() -> None:
             for sub in ("input", "alpha"):
                 link = d / it[sub]
                 if not link.exists():
-                    link.symlink_to((SRC / it[sub]).resolve())
+                    link.symlink_to((args.src / it[sub]).resolve())
             mf.write(json.dumps(it) + "\n")
         mf.close()
         made.append((d.name, len(chunk)))
@@ -47,4 +51,5 @@ def main() -> None:
     print("pools arg: " + ",".join(n for n, _ in made) + ",teacher_train*6")
 
 
-main()
+if __name__ == "__main__":
+    main()

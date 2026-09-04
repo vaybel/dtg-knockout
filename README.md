@@ -56,6 +56,21 @@ breaks down:
   edge or a hallucinated detail is unacceptable on a design that must print exactly as authored;
   and some are slow. A small, conditioned, deterministic model sidesteps all three.
 
+## Why not just key the color?
+
+A color keyer decides each pixel from one number: its distance from the background color. That
+only works when artwork and background never share a color, and garment graphics share it
+routinely — inline strokes and distress drawn in the garment color are, pixel for pixel, identical
+to the field around them. A rendered field also drifts off the requested color, so a tolerance
+wide enough to clear it eats the artwork's near-ground tones. And an anti-aliased edge is a blend
+of ink and background that a keyer producing a hard mask can only keep, as a fringe, or drop, as a
+jagged edge.
+
+No threshold resolves these. The answer lives in the neighborhood — whether ink encloses the
+pixel, continues a stroke, sits on a contour — and a per-pixel rule cannot see it. A model that
+looks at the neighborhood can. It takes the keyer's own distance map as an input and learns only
+what the keyer gets wrong: the decisions that need context, not color.
+
 ## The key insight: we know the background color
 
 Reframe the task. It is not *"segment the subject."* It is:
