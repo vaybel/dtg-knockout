@@ -216,9 +216,9 @@ def make_inline_lettering(rng: random.Random, bg01: np.ndarray, near_fill_prob: 
     """Collegiate lettering whose inline stroke is EXACTLY the ground color.
 
     Structure per word: colored glyph fill -> ground-colored inline band -> colored keyline.
-    GT alpha keeps the whole outer silhouette INCLUDING glyph counters: enclosed ground
-    bounded by ink is authored ink — only distress-scale speckle is dropped, and
-    add_distress teaches that pole. The inline is learnable despite matching the ground because it is
+    GT alpha keeps the outer silhouette with its inline band; a glyph counter is fabric, like
+    any gap between separate elements — only ground inside a continuous artwork region (an
+    inline, a pocket, a plate interior) is ink. The inline is learnable despite matching the ground because it is
     sandwiched between two ink strokes: both boundaries are observable (unlike a ring
     dissolving into open ground). The model split these bands patchily instead of
     keeping them.
@@ -263,12 +263,8 @@ def make_inline_lettering(rng: random.Random, bg01: np.ndarray, near_fill_prob: 
     rgb[a2 & ~a1] = keyline
     rgb[a1 & ~a0] = ground
     rgb[a0] = fill
-    # counters render as ground but stay KEPT: enclosed-by-ink ground is authored ink
-    from scipy import ndimage
-
-    filled = ndimage.binary_fill_holes(a0)
-    rgb[filled & ~a0] = ground
-    alpha = a2 | filled
+    # a counter renders as ground and stays fabric; the dilations already close the small ones
+    alpha = a2
     out = Image.fromarray(rgb, "RGB").convert("RGBA")
     out.putalpha(Image.fromarray((alpha * 255).astype(np.uint8), "L"))
     return out

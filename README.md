@@ -146,8 +146,11 @@ is structural (moth-eaten speckle). That reduces the policy to four rules:
 
 1. **Connected to the outside background** (letter counters, gaps between elements) → always remove.
 2. **At/near the garment color and bigger than the minimum printable feature** (~1 mm — below that,
-   ink dot gain fills holes and the choked white underbase halos on misregistration) → remove;
-   fabric renders it perfectly.
+   ink dot gain fills holes and the choked white underbase halos on misregistration) → remove
+   when it is a gap between elements or a glyph counter; fabric renders it perfectly. Ground
+   *inside a continuous artwork region* — an inline stroke between a fill and its keyline, a pocket
+   in a drawing, the interior of a badge or a bordered scene — is authored and stays ink: keying it
+   leaves fabric slivers inside the art, and the piece no longer survives a garment change.
 3. **Below the minimum feature size** → neither a hole nor a speck survives printing: fill enclosed
    micro-holes, drop isolated micro-specks (`cleanup.py`).
 4. **Near-match embedded in continuous art** (dark shading on a black garment, gradients passing
