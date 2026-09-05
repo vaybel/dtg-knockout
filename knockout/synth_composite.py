@@ -26,7 +26,9 @@ from .metrics import hex_to_rgb01
 class DriftConfig:
     max_tint_drift: float = 0.34
     shade_strength: float = 0.10
-    shadow_prob: float = 0.5
+    shadow_prob: float = 0.0   # a blurred-alpha drop shadow darkens the ground most INSIDE an element, so any
+                               # ground-coloured band there ends up darker than the ground beside it — a tint
+                               # cue real renders never have; the model learned it instead of enclosure
     noise_sigma: float = 0.012
     jpeg_quality: tuple[int, int] = (72, 95)
     multi_element_prob: float = 0.35
@@ -347,7 +349,12 @@ def compose_sample(fgs: list[Image.Image], bg_hex: str, cfg: DriftConfig,
     ground = np.clip(base + drift, 0, 1)[None, None, :]
     ground = np.clip(ground * _low_freq_shading(h, w, cfg.shade_strength, rng), 0, 1)
     ground = np.broadcast_to(ground, (h, w, 3)).copy()
-
+    # Ground-coloured artwork (an inline band, a pocket, a plate interior) comes out of the same
+    # render pass as the open ground beside it — same drift and shading. Painting it with the
+    # nominal colour leaves a local tint gap the model learns instead of enclosure. 0.06 survives
+    # two LANCZOS resamples of a thin band and stays under any deliberate near-ground fill (≥0.07).
+    is_ground = np.linalg.norm(fg_rgb - base[None, None, :], axis=-1) / np.sqrt(3.0) < 0.06
+    fg_rgb = np.where(is_ground[:, :, None], ground, fg_rgb)
     if rng.random() < cfg.shadow_prob:
         off = rng.randint(2, 8)
         sh = Image.fromarray((fg_a[:, :, 0] * 255).astype(np.uint8)).filter(
